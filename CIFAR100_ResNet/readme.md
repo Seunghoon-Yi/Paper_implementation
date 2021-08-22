@@ -36,6 +36,7 @@
 output : Accuracy and trained model. After training procedure, the best model will be stored in <code>./results/model_name/</code>
 
 <br>
+
 ### test.py
 <br/>
 
