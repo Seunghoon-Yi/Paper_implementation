@@ -4,15 +4,15 @@
 ## Environment : 
 <br/>
 <code>
-  python                    3.9.6\
+  python                    3.9.6<br/>
   pytorch                   1.9.0\
   cudatoolkit               11.1.1\
   cudnn                     8.2.1\
 </code>
 <br/>
+<br/>
 
 ## Description
-<br/>
 
 ### train.py
 <br/>
