@@ -34,3 +34,22 @@
         $python train.py --model ResNet34 --epoch 20 --lr 0.009 --BS 128 --gpu
         
 output : Accuracy and trained model. After training procedure, the best model will be stored in <code>./results/model_name/</code>
+
+<br>
+### test.py
+<br/>
+
+**1. Required options and arguments**<br/> 
+
+        '--model', the model name to test : ResNet 18/34/50/101/112.
+        '--BS', batch size. default=64.
+        '--gpu',  default='False', true when gpu is available.
+        
+<br>
+
+**2. Example :**
+<br>
+
+        $>python test.py --model ResNet18 --BS 128 --gpu
+        
+output : Test accuracy in 20 times
