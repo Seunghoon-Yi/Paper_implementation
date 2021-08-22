@@ -4,7 +4,7 @@
 ## Environment : 
 <br/>
 <code>
-  python                    3.9.6<br/>
+  python                    3.9.6__
   pytorch                   1.9.0\
   cudatoolkit               11.1.1\
   cudnn                     8.2.1\
