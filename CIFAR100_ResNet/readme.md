@@ -30,6 +30,7 @@
 
 **2. Example :**
 <br>
+
         $python train.py --model ResNet34 --epoch 20 --lr 0.009 --BS 128 --gpu
         
 output : Accuracy and trained model. After training procedure, the best model will be stored in <code>./results/model_name/</code>
