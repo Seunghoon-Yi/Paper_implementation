@@ -3,12 +3,12 @@
 
 ## Environment : 
 <br/>
-```
-python                    3.9.6
-pytorch                   1.9.0
-cudatoolkit               11.1.1
-cudnn                     8.2.1
-```
+
+  python                    3.9.6<br/>
+  pytorch                   1.9.0<br/>
+  cudatoolkit               11.1.1<br/>
+  cudnn                     8.2.1<br/>
+
 <br/>
 <br/>
 
