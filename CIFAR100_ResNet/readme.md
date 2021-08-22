@@ -4,10 +4,10 @@
 ## Environment : 
 <br/>
 <code>
-  python                    3.9.6 \
-  pytorch                   1.9.0 \
-  cudatoolkit               11.1.1 \
-  cudnn                     8.2.1 \
+  python                    3.9.6\
+  pytorch                   1.9.0\
+  cudatoolkit               11.1.1\
+  cudnn                     8.2.1\
 </code>
 <br/>
 
