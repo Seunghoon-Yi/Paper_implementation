@@ -1,6 +1,6 @@
 # SLT Transformer #
 <br>
-## 1. Data preprocessing 
+## 1. Data preprocessing ##
 <br>
 This model is trained on PHOENIX-14T sign language dataset, which videos has size of [T, H, W] = [T, 260, 210].
 <br>
