@@ -11,5 +11,4 @@ Video frames are padded to T = 224, and center-cropped with size of 228, 196.<br
 **2)** 
 Then saved into a predefined directory. This process is done by executing 
 
-
-'''save_video_multiprocessing.py'''.
+```save_video_multiprocessing.py```.
