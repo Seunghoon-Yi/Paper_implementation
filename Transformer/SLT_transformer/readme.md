@@ -19,5 +19,7 @@ Then saved into a predefined directory. This process is done by executing
 ## n. Sample Results ##
 <br>
 GT sentences of test dataset and its inference sentences from the model are given in the 
+
 **Sample results**
+
 directory. BLEU score model is also included. 
