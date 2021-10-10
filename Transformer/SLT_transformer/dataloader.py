@@ -9,6 +9,10 @@ from PIL import Image
 import spacy.cli
 import torchvision.transforms as transforms
 from torch.utils.data.sampler import SubsetRandomSampler
+from sklearn.utils import shuffle
+
+#import cv2
+#import glob
 
 
 #spacy.cli.download("en_core_web_md")
@@ -19,11 +23,12 @@ print("Build start")
 
 path = 'C:/Users/PC/2021-MLVU/SLT_project/'
 
-class Vocab:
-    def __init__(self, freq_th):
+class Vocab_tokenizer():
+    def __init__(self, freq_th, max_len):
         self.itos = {0 : "<PAD>", 1 : "<SOS>", 2 : "<EOS>", 3 : "<UNK>"}
         self.stoi = {"<PAD>" : 0, "<SOS>" : 1, "<EOS>" : 2, "<UNK>" : 3}
         self.freq_th = freq_th
+        self.max_len = max_len
 
     def __len__(self):
         return len(self.itos)
@@ -56,51 +61,57 @@ class Vocab:
 
     # Integer tokenizer
     def numericalize(self, text):
-        tokenized_text = self.tokenizer_eng(text)
-        return [
-            self.stoi[token] if token in self.stoi else self.stoi["<UNK>"]
-            for token in tokenized_text
-        ]
+        seqs = []
+        for src in text:
+            seq = [self.stoi["<PAD>"]]*self.max_len
+            tokenized_src = self.tokenizer_eng(src)
+            seq[0] = self.stoi["<SOS>"]                         # Patch SOS token at the front
+            for idx, word in enumerate(tokenized_src):
+                if idx == self.max_len:
+                    break
+                try:
+                    seq[idx+1] = self.stoi[word]
+                except :
+                    seq[idx+1] = self.stoi["<UNK>"]
+            seq[len(tokenized_src)+1]= self.stoi["<EOS>"]       # Patch EOS token at the end
+            seqs.append(seq)
+        return np.array(seqs)
+
+    def stringnize(self, tokens):
+        string = []
+        for token in tokens:
+            if token == 2 or token == 0:
+                break
+            else:
+                string.append(self.itos[token])
+        return string
+
+
 
 
 class SLT_dataset(Dataset):
-    def __init__(self, root_dir, data_file, transform = None, freq_th = 1):
-        self.root_dir = root_dir
-        self.df       = pd.read_csv(data_file, delimiter='|')
+    def __init__(self, root_dir, labels, glosses, targets, transform = None):
+        self.root_dir = root_dir # base_path = 'C:/Users/PC/2021-MLVU/SLT_project/'
+        self.labels = labels
+        self.glosses = glosses
+        self.translations = targets
+        self.vocab = Vocab_tokenizer(freq_th = 1, max_len = 64)
         self.transform = transform
 
-        # get images and caption columns
-        self.features = self.df["name"].to_numpy()
-        self.translations = self.df["translation"].to_numpy()
-
-        # Initialize and build vocab
-        self.vocab = Vocab(freq_th)
-        self.vocab.build_vocab(self.translations.tolist())
-
     def __len__(self):
-        return len(self.df)
+        return len(self.translations)
 
     def __getitem__(self, index):
-        '''
-        :param index: (int) index that we want to see
-        :return:      (str, png?) : caption-figure pair of index
-        '''
-        feature_id = self.features[index]
-        translation  = self.translations[index]
-        # Load image
-        span = 'span8_stride2/'
-        # (seq_len, 1024)
-        feature   = torch.stack(torch.load(os.path.join(self.root_dir, span, feature_id+'.pt')))
+        # Load {features, translations}
+        path = 'C:/Users/Siryu_sci/2021-MLVU/SLT_project//frames_228_196/' + self.labels[index] + '.pt'
+        frames = None
+        if os.path.exists(path):
+            frames = torch.load(path) / 255
 
-        # Convert text to tokens
-        tokens = [self.vocab.stoi["<SOS>"]]
-        tokens+= self.vocab.numericalize(translation)
-        tokens.append(self.vocab.stoi["<EOS>"])
+        gloss = torch.tensor(self.glosses[index])
+        translation = torch.tensor(self.translations[index])
 
-        return feature, torch.tensor(tokens)
-
-    def vocablen(self):
-        return self.vocab.__len__()
+        return frames, gloss, translation
 
 
 class Padder:
@@ -114,29 +125,33 @@ class Padder:
         '''
 
         # item : from __getitem__ : a single*BS (img, caption)
-        features = [item[0] for item in batch]    # Additional dimension for batch
-        features = pad_sequence(features, batch_first=True, padding_value=self.pad_idx)
-        targets = [item[1] for item in batch]
+        frames = [item[0] for item in batch]
+        frames = pad_sequence(frames, batch_first=True, padding_value=self.pad_idx)
+
+        glosses = [item[1] for item in batch]
+        glosses = pad_sequence(glosses, batch_first=True, padding_value=self.pad_idx)
+
+        targets = [item[2] for item in batch]
         targets = pad_sequence(targets, batch_first=True, padding_value=self.pad_idx)
 
-        return features.squeeze(2), targets
+        return frames, glosses, targets
+
 
 def get_loader(
         root_folder,
-        annotation_file,
-        BS = 32,
-        n_workers = 0,
-        shuffle = True,
-        pin_memory = True,
-        test_split = 0.2,
-        random_seed = 42
+        labels, glosses, targets,
+        BS=16,
+        n_workers=0,
+        transform = None,
+        shuffle=True,
+        pin_memory=True,
+        random_seed=42
 ):
-    dataset = SLT_dataset(root_folder, annotation_file)
-    vocab_len = dataset.vocablen()
+    dataset = SLT_dataset(root_folder, labels, glosses, targets, transform)
 
     dataset_len = len(dataset)
-    data_inedx  = list(range(dataset_len))
-    #split_index = int(np.floor(dataset_len*test_split))
+    data_inedx = list(range(dataset_len))
+    # split_index = int(np.floor(dataset_len*test_split))
 
     if shuffle == True:
         np.random.seed(random_seed)
@@ -148,25 +163,61 @@ def get_loader(
     # Define data sampler
     train_sampler = SubsetRandomSampler(train_indices)
     # Define dataloader. Be careful that sampler option is mutually exclusive with shuffle.
-    train_loader = DataLoader(dataset=dataset, batch_size=BS,
-                         num_workers=n_workers, sampler=train_sampler,
-                         pin_memory=pin_memory,collate_fn=Padder(pad_idx=pad_idx))
-    '''test_loader  = DataLoader(dataset=dataset, batch_size=BS,
-                              num_workers=n_workers, sampler=test_sampler,
-                              pin_memory=pin_memory,collate_fn=Padder(pad_idx=pad_idx))'''
-    return train_loader, dataset, pad_idx, vocab_len
+    loader = DataLoader(dataset=dataset, batch_size=BS,
+                        num_workers=n_workers, sampler=train_sampler,
+                        pin_memory=pin_memory, collate_fn=Padder(pad_idx=pad_idx))
+
+    return loader, dataset, pad_idx
 
 
 
-'''
+
 def main():
-    train_loader, dataset, pad_idx, vocab_size = get_loader(path,
-                            annotation_file=path + "PHOENIX-2014-T.test.corpus.csv")
+    data_path = 'C:/Users/Siryu_sci/2021-MLVU/SLT_project/'
+    train_data = pd.read_csv(data_path + "PHOENIX-2014-T.train.corpus.csv", delimiter='|')
+    val_data = pd.read_csv(data_path + "PHOENIX-2014-T.dev.corpus.csv", delimiter='|')
+    test_data = pd.read_csv(data_path + "PHOENIX-2014-T.test.corpus.csv", delimiter='|')
 
-    for idx, (imgs, captions) in enumerate(train_loader):
-        print(imgs.shape, imgs.type)
+    Traindata = pd.concat([train_data, val_data])
+    max_len = 55
+
+    # Define the tokenizer. data : translation, orth : gloss
+    data_tokenizer = Vocab_tokenizer(freq_th=1, max_len=max_len)
+    orth_tokenizer = Vocab_tokenizer(freq_th=1, max_len=max_len)
+
+    data_tokenizer.build_vocab(Traindata.translation)
+    orth_tokenizer.build_vocab(Traindata.orth)
+    # print(orth_tokenizer.stoi)
+
+    targets = data_tokenizer.numericalize(Traindata.translation)
+    glosses = orth_tokenizer.numericalize(Traindata.orth)
+    labels = Traindata.name.to_numpy()
+
+    print("Translation : ", targets.shape, len(data_tokenizer),
+          "\n", "Glosses ; ", glosses.shape, len(orth_tokenizer))  # (7615, 300) 2948
+
+    labels, targets, glosses = shuffle(labels, targets, glosses, random_state=42)
+    # Train and validation (feature labels, translations)
+    train_labels, train_glosses, train_translations = labels[:7115], glosses[:7115], targets[:7115]
+    val_labels, val_glosses, val_translations = labels[7115:], glosses[7115:], targets[7115:]
+    # test ''
+    test_labels = test_data.name.to_numpy()
+    test_glosses = orth_tokenizer.numericalize(test_data.orth)
+    test_translations = data_tokenizer.numericalize(test_data.translation)
+
+    transforms_ = transforms.Compose([
+        transforms.CenterCrop((224, 192)),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.2, 0.2, 0.2))]
+    )
+
+
+    train_loader, dataset, pad_idx = get_loader(data_path, train_labels,
+                                train_glosses, train_translations, n_workers=4, transform=transforms_)
+
+    for idx, (frames, glosses, captions) in enumerate(train_loader):
+        print(frames.shape, frames.dtype)
+        #print(frames[0, :, 0,10,10])
         print(captions.shape)
-    print(pad_idx, vocab_size)
 
 if __name__  == "__main__":
-    main()'''
+    main()
