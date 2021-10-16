@@ -1,5 +1,10 @@
 # SLT Transformer #
+<br><br>
+
+## 0. Introduction ##
 <br>
+
+Sign Language Translation is one major tasks in Computer Vision, using combined spatial and temporal modeling. In this project, We aim to translate sign language videos from [**Phoenix-14T Dataset**](https://www-i6.informatik.rwth-aachen.de/~koller/RWTH-PHOENIX-2014-T/)
 
 ## 1. Data preprocessing ##
 <br>
