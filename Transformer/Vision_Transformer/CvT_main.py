@@ -132,30 +132,24 @@ class CvT(nn.Module):
         xs = self.stage2_transformer(xs)
 
         xs = self.stage3_conv_embed(xs)
+        
         if self.with_TL :
-            print("before stg3 tr : ", xs.shape)
             xs = self.TokenLearner(xs)
-            print("after TL : ", xs.shape)
             b, n, _, _, _ = xs.shape
             cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
-            print("cls token shape : ", cls_tokens.shape)
+  
             xs = self.rearrange_tokens(xs)
             xs = torch.cat((cls_tokens, xs), dim=1)
-            print('reshaped : ', xs.shape)
+    
             xs = self.NaiveTransformer(xs)
-            print("after transformer : ", xs.shape)
             xs = xs.mean(dim=1) if self.pool == 'mean' else xs[:, 0]
-            print("in the final stg : ", xs.shape)
             xs = self.mlp_head(xs)
 
         else:
             b, n, _ = xs.shape
-            print("before stg3 tr : ", xs.shape)
             cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)       # repeat [() 1 dim] of [1 1 dim] batch_size times.
-            print("cls token shape : ", cls_tokens.shape)
             xs = torch.cat((cls_tokens, xs), dim=1)
             xs = self.stage3_transformer(xs)
-            print("after transformer : ", xs.shape)
             xs = xs.mean(dim=1) if self.pool == 'mean' else xs[:, 0]
             xs = self.mlp_head(xs)
         return xs
