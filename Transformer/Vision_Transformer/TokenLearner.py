@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import torch.nn as nn
+from torch import nn, einsum
 from einops import repeat, rearrange
 from einops.layers.torch import Rearrange
 
@@ -40,14 +40,17 @@ class TokenExtractor(nn.Module):
         # Rearrange and extract attention maps
         print(input_tensor.shape)
         input_tensor = rearrange(input_tensor, 'B T C H W -> (B T) C H W')  # bind the input with (batch, frame len)
+        print("after rearrange : ", input_tensor.shape)
         kernels      = self.generate_map(input_tensor)
         kernels      = self.norm(kernels)                                   # Generate Attention kernels, size of [(BT) S H W]
+        print("kernel size : ", kernels.shape)
 
         Attentions = []
         for K in kernels.transpose(0,1):
-            print(K.shape) # [(BT) H W]
+            #print(K.shape) # [(BT) H W]
             K = repeat(K, '(B T) H W -> (B T) C H W', B=BS, C=self.in_ch)
             attn_i = torch.mul(input_tensor, K)
+            print("kernelwise attnetion shape : ", attn_i.shape)
             attn_i = self.pool(attn_i)
             Attentions.append(attn_i)
 
@@ -62,20 +65,55 @@ class TokenExtractor(nn.Module):
         return Attentions
 
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_head, dropout, device):
-        super(MultiHeadAttention, self).__init__()
-
-    def forward(self, x):
-        pass
-
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model, n_head, dropout, device, forward_expansion = 2):
+    def __init__(self, d_model, n_head, d_head=64, forward_expansion=4, dropout=0.2, last_stage=False):
         super(TransformerBlock, self).__init__()
+        self.last_stage = last_stage
+        self.heads      = n_head
+        self.scale      = (d_head)**-0.5
+        project_out = not (n_head == 1 and d_head == d_model)
+
+        self.to_q = nn.Linear(d_model, d_head*n_head, bias=False)
+        self.to_k = nn.Linear(d_model, d_head*n_head, bias=False)
+        self.to_v = nn.Linear(d_model, d_head*n_head, bias=False)
+        self.WO   = nn.Sequential(nn.Linear(d_model, d_head*n_head),
+                                  nn.Dropout(dropout)) if project_out else nn.Identity()
+        self.FFNN = nn.Sequential(
+            nn.Linear(d_model, d_model*forward_expansion),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model*forward_expansion, d_model),
+            nn.Dropout(dropout)
+        )
+
 
     def forward(self, x):
-        pass
+        b, n, d, h = *x.shape, self.heads
+        if self.last_stage:
+            cla_token = x[:,0]
+            x = x[:,1:]
+            cls_token = rearrange(cla_token.unsqueeze(1), 'b n (h d) -> b h n d', h=h)
 
+        q = self.to_q(x)
+        q = rearrange(q, 'b n (d h) -> b h n d', h=h)
+        k = self.to_k(x)
+        k = rearrange(k, 'b n (d h) -> b h n d', h=h)
+        v = self.to_v(x)
+        v = rearrange(v, 'b n (d h) -> b h n d', h=h)
+
+        if self.last_stage:
+            q = torch.cat((cls_token, q), dim=2)
+            k = torch.cat((cls_token, k), dim=2)
+            v = torch.cat((cls_token, v), dim=2)
+
+        dots = einsum('b h m d, b h n d -> b h m n', q, k)*self.scale
+        attn = dots.softmax(dim=-1)
+        out  = einsum('b h m n, b h n d -> b h n d', attn, v)
+        out  = rearrange(out, 'b h n d ->b n (h d)', h=h)
+        out = self.WO(out)
+        print("transfoemreblock out : ", out.shape)
+
+        return out
 
 
 class TokenFuser(nn.Module):
@@ -101,6 +139,7 @@ class TokenFuser(nn.Module):
         elif self.reduction == 'concat':
             tokens = rearrange(tokens, 'B (T S) C H W -> B C H W (T S)', S=self.S)
         print("Tokens after rearranged : ", tokens.shape)
+        print(self.proj_Y, self.proj_X)
 
         BS, frames, C, H, W = orig_tensor.shape
         print("Origianl Tensor : ", orig_tensor.shape)
@@ -119,15 +158,38 @@ class TokenFuser(nn.Module):
         return out
 
 
+class TokenLearnerModule(nn.Module):
+    def __init__(self, in_ch, N_tokens, H_out, W_out, reduction, compression=True):
+        super(TokenLearnerModule, self).__init__()
+
+        self.C = in_ch
+        self.S = N_tokens
+        self.H_out = H_out
+        self.W_out = W_out
+        self.reduction = reduction
+        self.compression = compression
+
+        self.Compressor  = TokenExtractor(in_ch, N_tokens, H_out, W_out, reduction)
+        self.Transformer = None
+        #self.Fuser       = TokenFuser(in_ch, N_tokens, )
+
+    def forward(self, input_tensor):
+        if self.compression :
+            return self.Compressor(input_tensor)
+        else:
+            pass
+
+
+
 
 if __name__ == '__main__':
 
     n_tokens = 8
-    in_channels = 32
-    mode     = 'stack'
+    in_channels = 256
+    mode     = 'concat'
 
-    tokenlearner = TokenExtractor(in_ch=in_channels, N_tokens=n_tokens, H_out=4, W_out=4, reduction=mode)
-    X = torch.randn(4,128,in_channels,64,64) # B T C H W
+    tokenlearner = TokenLearnerModule(in_ch=in_channels, N_tokens=n_tokens, H_out=1, W_out=1, reduction=mode)
+    X = torch.randn(4,1,in_channels,8,8) # B T C H W
     Attentions = tokenlearner(X)
 
     repr_tensor = TokenFuser(C=in_channels, S=n_tokens, shape_=Attentions.shape, reduction=mode)
