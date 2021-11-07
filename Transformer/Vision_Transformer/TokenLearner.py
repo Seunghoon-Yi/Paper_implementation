@@ -38,19 +38,14 @@ class TokenExtractor(nn.Module):
         assert (self.reduction == 'stack') or (self.reduction == 'concat')
 
         # Rearrange and extract attention maps
-        print(input_tensor.shape)
         input_tensor = rearrange(input_tensor, 'B T C H W -> (B T) C H W')  # bind the input with (batch, frame len)
-        print("after rearrange : ", input_tensor.shape)
         kernels      = self.generate_map(input_tensor)
         kernels      = self.norm(kernels)                                   # Generate Attention kernels, size of [(BT) S H W]
-        print("kernel size : ", kernels.shape)
 
         Attentions = []
         for K in kernels.transpose(0,1):
-            #print(K.shape) # [(BT) H W]
             K = repeat(K, '(B T) H W -> (B T) C H W', B=BS, C=self.in_ch)
             attn_i = torch.mul(input_tensor, K)
-            print("kernelwise attnetion shape : ", attn_i.shape)
             attn_i = self.pool(attn_i)
             Attentions.append(attn_i)
 
@@ -60,7 +55,6 @@ class TokenExtractor(nn.Module):
             Attentions = rearrange(Attentions, '(B T) S C H W -> B T (S C) H W', B=BS, C=self.in_ch)
         elif self.reduction == 'concat':
             Attentions = rearrange(Attentions, '(B T) S C H W -> B (T S) C H W', B=BS, C=self.in_ch)
-        print("Attention block shape : ", Attentions.shape, '\n'*3)
 
         return Attentions
 
@@ -111,7 +105,6 @@ class TransformerBlock(nn.Module):
         out  = einsum('b h m n, b h n d -> b h n d', attn, v)
         out  = rearrange(out, 'b h n d ->b n (h d)', h=h)
         out = self.WO(out)
-        print("transfoemreblock out : ", out.shape)
 
         return out
 
@@ -124,7 +117,6 @@ class TokenFuser(nn.Module):
         self.S = S
         self.B, self.T_, self.C_, self.H_, self.W_ = shape_
         self.reduction = reduction
-        print("Tokens shape : ", shape_)
 
         assert (self.reduction == 'stack') or (self.reduction == 'concat')
         self.y_dim  = self.T_*self.C_ // self.C
@@ -138,20 +130,15 @@ class TokenFuser(nn.Module):
             tokens = rearrange(tokens, 'B T (S C) H W -> B C H W (T S)', S=self.S)
         elif self.reduction == 'concat':
             tokens = rearrange(tokens, 'B (T S) C H W -> B C H W (T S)', S=self.S)
-        print("Tokens after rearranged : ", tokens.shape)
-        print(self.proj_Y, self.proj_X)
 
         BS, frames, C, H, W = orig_tensor.shape
-        print("Origianl Tensor : ", orig_tensor.shape)
         Y = self.proj_Y(tokens)
         Y = rearrange(Y, 'B C H W (T S) -> (B T) (H W S) C', S=self.S)                       # Actually (BT)(H_W_S)C
-        print("Y shape : ", Y.shape) ; print("X shape : ", orig_tensor.shape)
+
         Bw = orig_tensor.permute(0,1,3,4,2)
         Bw = self.norm(self.proj_X(Bw))
         Bw = rearrange(Bw, 'B T H W C -> (B T) (H W) C', C=self.S*self.H_*self.W_, B=self.B) # Actually (BT)(HW)(H_W_S)
-        print("weight mtx to Y : ", Bw.shape)
         BwY = torch.bmm(Bw, Y)
-        print("after matmul : ", BwY.shape)
 
         out = rearrange(BwY, '(B T) (H W) C -> B T H W C', B=self.B, T=frames, H=H, W=W, C=C)
 
