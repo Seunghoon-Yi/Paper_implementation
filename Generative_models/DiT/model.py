@@ -337,5 +337,5 @@ DiT_models = {
 
 #%%
 
-testmodel = DiT_B_2()
-print(testmodel)
+# testmodel = DiT_B_2()
+# print(testmodel)
