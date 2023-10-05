@@ -6,8 +6,8 @@ from collections import OrderedDict
 import torch
 from torch import nn
 
-from configs import get_efficientnet_v2_structure
-from pretrained_weight_loader import load_from_zoo
+from .configs import get_efficientnet_v2_structure
+from .pretrained_weight_loader import load_from_zoo
 
 #%%
 class ConvBNAct(nn.Sequential):
@@ -205,9 +205,8 @@ if __name__ == "__main__":
     model = get_efficientnet_v2("efficientnet_v2_s", True, 1000, 0.2, 0.2)
     print(model)
 
-#%%
-n_params = 0
-for p in model.parameters():
-    if p.requires_grad:
-        n_params += p.numel()
-print(n_params / 1e6, " M")
+    n_params = 0
+    for p in model.parameters():
+        if p.requires_grad:
+            n_params += p.numel()
+    print(n_params / 1e6, " M")
