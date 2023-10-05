@@ -1,0 +1,10 @@
+# extensions
+*.pyc
+*.npy
+*.npz
+*.csv
+*.log
+*.txt
+
+# folders
+*/datasets/*
