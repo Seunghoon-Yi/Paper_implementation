@@ -72,6 +72,60 @@ class PositionalEncoding(nn.Module):
             return self.dropout(positional_encoding)
         return positional_encoding
 
+#%%
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.GroupNorm(1, dim)
+        self.fn = fn
+
+    def forward(self, x, **kwargs):
+        return self.fn(self.norm(x), **kwargs)
+
+
+class Block(nn.Module):
+    def __init__(self, dim, dim_out, groups = 8):
+        super().__init__()
+        self.proj = nn.Conv2d(dim, dim_out, 3, padding = 1)
+        self.norm = nn.GroupNorm(groups, dim_out)
+        self.act = nn.SiLU()
+
+    def forward(self, x, scale_shift = None):
+        x = self.proj(x)
+        x = self.norm(x)
+
+        if exists(scale_shift):
+            scale, shift = scale_shift
+            x = x * (scale + 1) + shift
+
+        x = self.act(x)
+        return x
+
+
+class ResnetBlock(nn.Module):
+    """https://arxiv.org/abs/1512.03385"""
+    
+    def __init__(self, dim, dim_out, *, time_emb_dim=None, groups=8):
+        super().__init__()
+        self.mlp = (
+            nn.Sequential(nn.SiLU(), nn.Linear(time_emb_dim, dim_out))
+            if exists(time_emb_dim)
+            else None
+        )
+
+        self.block1 = Block(dim, dim_out, groups=groups)
+        self.block2 = Block(dim_out, dim_out, groups=groups)
+        self.res_conv = nn.Conv2d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
+
+    def forward(self, x, time_emb=None):
+        h = self.block1(x)
+
+        if exists(self.mlp) and exists(time_emb):
+            time_emb = self.mlp(time_emb)
+            h = rearrange(time_emb, "b c -> b c 1 1") + h
+
+        h = self.block2(h)
+        return h + self.res_conv(x)
 
 
 #%%
@@ -84,7 +138,7 @@ class ConvNext(nn.Sequential):
         c_dim - (optional) Number of dimensions in the class input embedding
         p_drop - Rate to apply dropout to each layer in the block
     '''
-    def __init__(self, in_Ch, out_Ch, t_dim=None, c_dim=None, p_drop=0.0):
+    def __init__(self, in_Ch, out_Ch, t_dim=None, c_dim=None, mult=2, p_drop=0.0):
         super(ConvNext, self).__init__()
 
         # Implementation found at https://arxiv.org/pdf/2201.03545.pdf
@@ -94,12 +148,14 @@ class ConvNext(nn.Sequential):
         #   1x1 conv
         #   GELU
         #   1x1 conv
+        groups_ = in_Ch//out_Ch if in_Ch > out_Ch else in_Ch
+        print("informations ; ", in_Ch, out_Ch, t_dim, c_dim, mult, p_drop, groups_)
         self.block = nn.Sequential(
-            nn.Conv2d(in_Ch, in_Ch, 7, padding=3, groups=in_Ch),
-            nn.GroupNorm(in_Ch//4 if in_Ch > 4 else 1, in_Ch),
-            nn.Conv2d(in_Ch, in_Ch*2, 1),
+            nn.Conv2d(in_Ch, out_Ch, 7, padding=3, groups=groups_),
+            nn.GroupNorm(out_Ch//4 if out_Ch > 4 else 1, out_Ch),
+            nn.Conv2d(out_Ch, out_Ch*mult, 1),
             nn.GELU(),
-            nn.Conv2d(in_Ch*2, out_Ch, 1),
+            nn.Conv2d(out_Ch*mult*2, out_Ch, 1),
         )
         self.dropout = nn.Dropout2d(p_drop)
 
