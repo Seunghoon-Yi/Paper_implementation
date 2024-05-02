@@ -164,13 +164,13 @@ class ConvNext(nn.Sequential):
 
         # Optional time vector applied over the channels
         if t_dim != None:
-            self.timeProj = nn.Linear(t_dim, in_Ch)
+            self.timeProj = nn.Linear(t_dim, out_Ch)
         else:
             self.timeProj = None
 
         # Optional class vector applied over the channels
         if c_dim != None:
-            self.clsProj = nn.Linear(c_dim, in_Ch)
+            self.clsProj = nn.Linear(c_dim, out_Ch)
         else:
             self.clsProj = None
 
@@ -198,12 +198,16 @@ class ConvNext(nn.Sequential):
         else:
             # Initial convolution and dropout
             X = self.block[0](X)
+            print(self.block[1], X.shape)
             X = self.block[1](X)
             # Time and class embeddings
             t = self.timeProj(t).unsqueeze(-1).unsqueeze(-1)
-            c = self.clsProj(c).unsqueeze(-1).unsqueeze(-1)
-            # Combine the class, time, and embedding information
-            X = X*t + c
+            if c == None:
+                X = X*t
+            else:
+                c = self.clsProj(c).unsqueeze(-1).unsqueeze(-1)
+                # Combine the class, time, and embedding information
+                X = X*t + c
             # Output linear projection
             for b in self.block[2:]:
                 X = b(X)
